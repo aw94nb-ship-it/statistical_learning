@@ -62,7 +62,43 @@ For K > 2 classes, model K−1 log-odds relative to a baseline class K:
 
 $$\log\left(\frac{P(Y=k \mid X)}{P(Y=K \mid X)}\right) = \beta_{k0} + \beta_{k1} X_1 + \cdots + \beta_{kp} X_p$$
 
-**Softmax** formulation gives probabilities for all K classes simultaneously.
+**K vs k:**
+
+| Symbol | Meaning |
+|---|---|
+| **K** (uppercase) | Total number of classes AND the label for the baseline class |
+| **k** (lowercase) | A specific class being modeled, where k = 1, 2, ..., K−1 |
+
+You fit **K−1 equations** — one for each non-baseline class compared against K. Each equation has its own intercept and slopes.
+
+**Example: 3 classes (K = 3) — Bus, Car, Train. Baseline = Train.**
+
+```
+Equation 1 (k = Bus):  log[ P(Bus) / P(Train) ] = β₁₀ + β₁₁·distance
+Equation 2 (k = Car):  log[ P(Car) / P(Train) ] = β₂₀ + β₂₁·distance
+```
+
+Each equation has its own intercept and own slopes — distance might push strongly toward Car but weakly toward Bus. Train gets no equation — its probability is whatever is left over.
+
+**Why K−1, not K equations?** If you fit all K, the system is over-identified — you can add a constant to every equation and get identical probabilities. Fixing one class as baseline forces a unique solution. The choice of baseline doesn't affect predictions, only how coefficients are interpreted.
+
+**Joint estimation:** the K−1 equations are estimated simultaneously by maximizing one combined likelihood — not independently. This ensures all predicted probabilities stay coherent (sum to 1).
+
+**Softmax** converts the 2 equations back to probabilities for all 3 classes:
+
+$$P(\text{Bus}) = \frac{e^{\beta_{10} + \beta_{11}X}}{1 + e^{\beta_{10} + \beta_{11}X} + e^{\beta_{20} + \beta_{21}X}}$$
+
+$$P(\text{Car}) = \frac{e^{\beta_{20} + \beta_{21}X}}{1 + e^{\beta_{10} + \beta_{11}X} + e^{\beta_{20} + \beta_{21}X}}$$
+
+$$P(\text{Train}) = \frac{1}{1 + e^{\beta_{10} + \beta_{11}X} + e^{\beta_{20} + \beta_{21}X}}$$
+
+All three sum to 1. Train's numerator is always 1 (= e⁰) because it's the baseline.
+
+**General softmax** converts the K−1 log-odds back to probabilities for all K classes:
+
+$$P(Y=k \mid X) = \frac{e^{\beta_{k0} + \beta_{k1}X_1 + \cdots + \beta_{kp}X_p}}{1 + \sum_{l=1}^{K-1} e^{\beta_{l0} + \beta_{l1}X_1 + \cdots + \beta_{lp}X_p}}$$
+
+The baseline class K always has numerator = 1 (= e⁰). All K probabilities sum to 1.
 
 ---
 
@@ -82,9 +118,65 @@ Key metrics:
 - **Precision** = TP / (TP + FP) — fraction of predicted positives that are correct
 - **F1** = 2 × (Precision × Recall) / (Precision + Recall)
 
-**ROC Curve**: plots TPR vs. FPR as the classification threshold varies from 0 to 1.
+**ROC Curve and AUC**
 
-**AUC (Area Under the ROC Curve)**: probability that the model ranks a random positive higher than a random negative. AUC = 0.5 → random; AUC = 1.0 → perfect.
+A logistic regression outputs a **probability**, not a class. You pick a threshold to convert it to 0/1 — and every threshold gives a different TPR/FPR pair. The ROC curve plots all of them at once by sweeping the threshold from 1 down to 0.
+
+*Example: 10 patients, 5 sick (y=1), 5 healthy (y=0)*
+
+| Patient | True label | p(sick) |
+|---|---|---|
+| A | 1 | 0.95 |
+| B | 1 | 0.80 |
+| C | 0 | 0.70 |
+| D | 1 | 0.60 |
+| E | 0 | 0.55 |
+| F | 1 | 0.45 |
+| G | 0 | 0.40 |
+| H | 0 | 0.30 |
+| I | 1 | 0.20 |
+| J | 0 | 0.10 |
+
+| Threshold | Predict positive | TP | FP | TPR | FPR |
+|---|---|---|---|---|---|
+| > 0.95 | nobody | 0 | 0 | 0.0 | 0.0 |
+| > 0.70 | A, B | 2 | 0 | 0.4 | 0.0 |
+| > 0.55 | A, B, C, D | 3 | 1 | 0.6 | 0.2 |
+| > 0.40 | A–F | 4 | 2 | 0.8 | 0.4 |
+| > 0.10 | A–I | 5 | 4 | 1.0 | 0.8 |
+| > 0.00 | everyone | 5 | 5 | 1.0 | 1.0 |
+
+Plot these (FPR, TPR) points → that's your ROC curve.
+
+```
+TPR
+1.0 |          * ----*
+    |       *
+0.5 |     *
+    |   *
+0.0 *-----------*----
+    0.0  0.5   1.0  FPR
+
+    ↑ Good model: hugs top-left corner
+    ↑ Random model: diagonal line (AUC = 0.5)
+```
+
+**AUC (Area Under the ROC Curve)**: probability that the model scores a random positive higher than a random negative.
+
+| AUC | Meaning |
+|---|---|
+| 1.0 | Perfect — every positive ranks above every negative |
+| 0.9 | Model ranks a random positive above a random negative 90% of the time |
+| 0.5 | Random — coin flip |
+| < 0.5 | Worse than random (flip your predictions) |
+
+**AUC vs accuracy — when each matters**
+
+| Use AUC when | Use accuracy when |
+|---|---|
+| Classes are imbalanced | Classes are balanced |
+| You care about ranking, not a fixed threshold | You have a fixed operating threshold |
+| Comparing models before choosing a threshold | Final deployed model evaluation |
 
 ---
 

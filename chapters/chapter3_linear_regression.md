@@ -79,6 +79,38 @@ Large F → at least one $\beta_j \neq 0$. Always check F before interpreting in
 
 ---
 
+### Reading the Correlation Matrix
+
+The correlation matrix shows pairwise correlations (r) between all variables, ranging from −1 to +1. In a regression context, read two things:
+
+**1. Last column (predictor ↔ outcome)** — which predictors have the strongest raw relationship with Y?
+
+**2. Off-diagonal predictor pairs** — high correlation between two predictors signals potential multicollinearity.
+
+| \|r\| range | Interpretation |
+|---|---|
+| 0.0 – 0.2 | Negligible |
+| 0.2 – 0.4 | Weak |
+| 0.4 – 0.6 | Moderate |
+| 0.6 – 0.8 | Strong |
+| 0.8 – 1.0 | Very strong |
+
+- **Positive r**: both variables move together
+- **Negative r**: one goes up, the other goes down
+- **Diagonal is always 1.0**: a variable is perfectly correlated with itself
+
+**The newspaper paradox (Advertising data)**
+
+The correlation matrix shows `newspaper ↔ sales = 0.2283` — suggesting newspaper matters. But the regression coefficient is −0.001 with p = 0.86 (insignificant). Why? `newspaper ↔ radio = 0.3541`. Newspaper spending is correlated with radio spending, and radio is what actually drives sales. Once you control for radio in the multiple regression, newspaper adds nothing. Simple correlations can be misleading — they don't account for the relationships between predictors.
+
+| Predictor | Corr with sales | Regression p-value | Why |
+|---|---|---|---|
+| TV | 0.7822 | < 0.0001 | Genuinely useful — strong independent signal |
+| radio | 0.5762 | < 0.0001 | Genuinely useful |
+| newspaper | 0.2283 | 0.8599 | Proxy for radio (r = 0.35 with radio); adds nothing once radio is controlled |
+
+---
+
 ### Qualitative Predictors (Dummy Variables)
 
 For a categorical variable with $k$ levels, create $k-1$ dummy variables. The omitted level is the **baseline**.
@@ -112,11 +144,31 @@ $\beta_3$ = how much the effect of $X_1$ on Y changes as $X_2$ increases.
 | **High leverage** | Leverage statistic $h_i > (p+1)/n$ | Remove or investigate |
 | **Collinearity** | VIF > 5–10 | Drop a variable; ridge regression |
 
+**What "no perfect multicollinearity" means**
+
+OLS requires that no predictor is a perfect linear combination of others (r ≠ ±1). At r = ±1.0, the X'X matrix becomes non-invertible — unique coefficients cannot be computed and the model fails entirely. In practice, even high-but-not-perfect correlation (r ≈ 0.8+) inflates standard errors and makes coefficients unstable.
+
+| Correlation | Status | Effect |
+|---|---|---|
+| r = ±1.0 | Perfect — assumption violated | Model fails; can't fit |
+| r = 0.8–0.99 | High but not perfect | Coefficients unstable, SEs inflate |
+| r = 0.3–0.7 | Moderate | Generally fine |
+| r ≈ 0 | No correlation | Ideal |
+
+**Why check VIF, not just pairwise r?**
+
+Pairwise correlation only catches two-variable collinearity. VIF catches cases where a predictor is a near-perfect linear combination of *multiple* others — e.g., C ≈ A + B, even if no single pairwise r looks alarming.
+
 **Variance Inflation Factor (VIF)**: measures how much variance of $\hat{\beta}_j$ is inflated due to collinearity with other predictors.
 
 $$\text{VIF}(\hat{\beta}_j) = \frac{1}{1 - R^2_{X_j | X_{-j}}}$$
 
-VIF = 1: no collinearity. VIF > 10: severe collinearity.
+| VIF | Interpretation |
+|---|---|
+| 1 | No collinearity |
+| 1–5 | Acceptable |
+| 5–10 | Concerning |
+| > 10 | Severe — consider dropping or combining predictors |
 
 ---
 
@@ -130,6 +182,81 @@ Both are centered on $\hat{y}$ at a new $x^*$, but they measure different things
 | **Prediction interval** | Uncertainty about an **individual** new observation | Wider (adds $\sigma^2$) |
 
 Prediction intervals are always wider because individual observations vary around the mean.
+
+---
+
+### Reading OLS Output
+
+A `statsmodels` OLS summary has three blocks. Example using the Advertising data:
+
+```
+                            OLS Regression Results
+==============================================================================
+Dep. Variable:                  Sales   R-squared:                       0.897
+Model:                            OLS   Adj. R-squared:                  0.896
+Method:                 Least Squares   F-statistic:                     570.3
+Date:                 Wed, 30 Apr 2026   Prob (F-statistic):           1.58e-96
+No. Observations:                 200   Log-Likelihood:                -386.18
+Df Residuals:                     196   AIC:                             780.4
+Df Model:                           3   BIC:                             793.6
+==============================================================================
+                 coef    std err          t      P>|t|      [0.025      0.975]
+------------------------------------------------------------------------------
+Intercept      2.9389      0.312      9.422      0.000       2.324       3.554
+TV             0.0458      0.001     32.809      0.000       0.043       0.049
+Radio          0.1885      0.009     21.893      0.000       0.172       0.206
+Newspaper     -0.0010      0.006     -0.177      0.860      -0.013       0.011
+==============================================================================
+Omnibus:                       60.414   Durbin-Watson:                   2.084
+Prob(Omnibus):                  0.000   Jarque-Bera (JB):              151.241
+Skew:                          -1.327   Prob(JB):                     1.44e-33
+Kurtosis:                       6.332   Cond. No.                         454.
+==============================================================================
+```
+
+**Top block — overall model fit**
+
+| Number | What it means |
+|---|---|
+| **R-squared: 0.897** | TV + radio + newspaper explain 89.7% of variance in sales |
+| **Adj. R-squared: 0.896** | R² penalized for number of predictors — very close to R², so no predictors are pure noise inflating it |
+| **F-statistic: 570.3** | Tests H₀: all coefficients = 0 (model is useless). 570 is huge → model is useful |
+| **Prob (F-statistic): 1.58e-96** | p-value for F-test ≈ 0. At least one predictor matters. Always check this before individual t-tests |
+| **Df Residuals: 196** | n − p − 1 = 200 − 3 − 1. Degrees of freedom after estimating 4 parameters |
+| **Df Model: 3** | Number of predictors (not counting intercept) |
+
+**Middle block — coefficients**
+
+| Column | What it means |
+|---|---|
+| **coef** | Estimated slope. TV = 0.0458 → each $1K more in TV spend → +45.8 units sold, *holding radio and newspaper fixed* |
+| **std err** | Uncertainty in the coefficient estimate. Smaller = more precise |
+| **t** | coef ÷ std err. How many standard errors from zero. Rule of thumb: \|t\| > 2 is significant |
+| **P>\|t\|** | p-value for H₀: this coefficient = 0. TV/radio: p ≈ 0 → significant. Newspaper: p = 0.86 → not useful |
+| **[0.025, 0.975]** | 95% confidence interval. TV: [0.043, 0.049] excludes 0 → significant. Newspaper: [−0.013, 0.011] includes 0 → not significant |
+
+The intercept (2.939) = predicted sales when all predictors = 0. Often not meaningful on its own.
+
+**Bottom block — diagnostics**
+
+| Number | What it means |
+|---|---|
+| **Durbin-Watson: 2.084** | Tests autocorrelation in residuals. Near 2 = no autocorrelation. Good. |
+| **Omnibus p = 0.000** | Tests normality of residuals. p ≈ 0 → residuals are not normal. Less critical with large n (CLT). |
+| **Skew: −1.327** | Residuals are left-skewed (symmetric = 0) |
+| **Kurtosis: 6.332** | Heavy tails (normal = 3) — confirms non-normality |
+| **Cond. No.: 454** | Multicollinearity check. > 1000 is alarming; 454 is fine |
+
+**Quick checklist when reading any OLS output**
+
+```
+1. Prob (F-statistic) < 0.05?   → Model is useful overall
+2. R² / Adj R²                  → How much variance explained
+3. Each coef p-value < 0.05?    → Is this predictor significant?
+4. CI includes 0?               → If yes, predictor is not significant
+5. Durbin-Watson ≈ 2?           → No autocorrelation in errors
+6. Cond. No. < 1000?            → No severe multicollinearity
+```
 
 ---
 
